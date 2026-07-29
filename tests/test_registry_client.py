@@ -14,7 +14,6 @@ async def client():
     ) as http_client:
         yield RegistryClient(http_client)
 
-
 async def test_register_returns_worker_id(client):
     worker_id = await client.register(
         RegisterRequest(model_name="demo", endpoint_url="http://worker-a")
