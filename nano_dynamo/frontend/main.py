@@ -51,3 +51,24 @@ def create_app(settings: FrontendSettings) -> FastAPI:
         return StreamingResponse(token_stream(), media_type="text/plain")
 
     return app
+
+
+if __name__ == "__main__":
+    import os
+
+    import uvicorn
+
+    from nano_dynamo.registry_client import RegistryClient
+
+    registry_url = os.environ.get("REGISTRY_URL", "http://127.0.0.1:8000")
+    settings = FrontendSettings(
+        registry_client=RegistryClient(httpx.AsyncClient(base_url=registry_url)),
+        # One fresh client per request. Fine for a teaching demo; a production
+        # frontend would pool and reuse (or close) these connections instead.
+        worker_client_factory=lambda endpoint_url: httpx.AsyncClient(base_url=endpoint_url),
+    )
+    uvicorn.run(
+        create_app(settings),
+        host=os.environ.get("FRONTEND_HOST", "127.0.0.1"),
+        port=int(os.environ.get("FRONTEND_PORT", "8080")),
+    )

@@ -78,3 +78,19 @@ async def _reap_loop(app: FastAPI, settings: RegistrySettings) -> None:
             ]
             for worker_id in stale_ids:
                 del app.state.workers[worker_id]
+
+
+if __name__ == "__main__":
+    import os
+
+    import uvicorn
+
+    settings = RegistrySettings(
+        heartbeat_ttl_seconds=float(os.environ.get("REGISTRY_HEARTBEAT_TTL_SECONDS", "15")),
+        reaper_interval_seconds=float(os.environ.get("REGISTRY_REAPER_INTERVAL_SECONDS", "5")),
+    )
+    uvicorn.run(
+        create_app(settings),
+        host=os.environ.get("REGISTRY_HOST", "127.0.0.1"),
+        port=int(os.environ.get("REGISTRY_PORT", "8000")),
+    )

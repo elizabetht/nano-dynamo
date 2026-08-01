@@ -67,3 +67,26 @@ async def _heartbeat_loop(settings: WorkerSettings, state) -> None:
     while True:
         await asyncio.sleep(settings.heartbeat_interval_seconds)
         await _send_heartbeat_or_reregister(settings, state)
+
+
+if __name__ == "__main__":
+    import os
+
+    import httpx
+    import uvicorn
+
+    from nano_dynamo.registry_client import RegistryClient
+
+    registry_url = os.environ.get("REGISTRY_URL", "http://127.0.0.1:8000")
+    host = os.environ.get("WORKER_HOST", "127.0.0.1")
+    port = int(os.environ.get("WORKER_PORT", "8001"))
+    # endpoint_url is what the Frontend will use to reach this worker, so it
+    # must be an address others can dial -- not necessarily the bind host.
+    endpoint_url = os.environ.get("WORKER_ENDPOINT_URL", f"http://{host}:{port}")
+
+    settings = WorkerSettings(
+        model_name=os.environ.get("WORKER_MODEL_NAME", "demo"),
+        endpoint_url=endpoint_url,
+        registry_client=RegistryClient(httpx.AsyncClient(base_url=registry_url)),
+    )
+    uvicorn.run(create_app(settings), host=host, port=port)
