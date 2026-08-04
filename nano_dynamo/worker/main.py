@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
@@ -18,12 +19,24 @@ class WorkerSettings:
     registry_client: RegistryClientProtocol
     worker_type: str = "aggregated"
     heartbeat_interval_seconds: float = 5.0
+    # A ready-made engine (the mock default). Used when engine_factory is None.
     engine: Engine = field(default_factory=MockEngine)
+    # An optional factory built once at startup instead of `engine`. Needed for
+    # engines like vLLM that must be constructed inside the running event loop,
+    # on the GPU host, and are too heavy to build eagerly at import time.
+    engine_factory: Callable[[], Engine] | None = None
 
 
 def create_app(settings: WorkerSettings) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # If a factory is set (e.g. vLLM), build it at startup and override the
+        # synchronous default below -- so a slow-loading engine only registers
+        # once it can actually serve. The synchronous default in create_app
+        # keeps the mock path working under httpx.ASGITransport, which does not
+        # run lifespan events (same reason the Registry inits state eagerly).
+        if settings.engine_factory:
+            app.state.engine = settings.engine_factory()
         app.state.worker_id = await settings.registry_client.register(
             RegisterRequest(
                 model_name=settings.model_name,
@@ -38,11 +51,14 @@ def create_app(settings: WorkerSettings) -> FastAPI:
             await heartbeat_task
 
     app = FastAPI(lifespan=lifespan)
+    # Synchronous default so the engine is available even without lifespan
+    # (httpx.ASGITransport in tests); lifespan may override it with the factory.
+    app.state.engine = settings.engine
 
     @app.post("/generate")
     async def generate(request: GenerateRequest):
         async def token_stream():
-            async for token in settings.engine.generate(request.prompt):
+            async for token in app.state.engine.generate(request.prompt):
                 yield token
 
         return StreamingResponse(token_stream(), media_type="text/plain")
@@ -83,10 +99,21 @@ if __name__ == "__main__":
     # endpoint_url is what the Frontend will use to reach this worker, so it
     # must be an address others can dial -- not necessarily the bind host.
     endpoint_url = os.environ.get("WORKER_ENDPOINT_URL", f"http://{host}:{port}")
+    model_name = os.environ.get("WORKER_MODEL_NAME", "demo")
+
+    # WORKER_ENGINE=mock (default, no GPU) or WORKER_ENGINE=vllm (real inference).
+    # vLLM is passed as a factory so it's built at startup on the GPU host, not
+    # eagerly here -- see WorkerSettings.engine_factory.
+    engine_factory = None
+    if os.environ.get("WORKER_ENGINE", "mock") == "vllm":
+        from nano_dynamo.worker.vllm_engine import VLLMEngine
+
+        engine_factory = lambda: VLLMEngine(model_name)  # noqa: E731
 
     settings = WorkerSettings(
-        model_name=os.environ.get("WORKER_MODEL_NAME", "demo"),
+        model_name=model_name,
         endpoint_url=endpoint_url,
         registry_client=RegistryClient(httpx.AsyncClient(base_url=registry_url)),
+        engine_factory=engine_factory,
     )
     uvicorn.run(create_app(settings), host=host, port=port)

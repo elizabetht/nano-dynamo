@@ -60,3 +60,28 @@ def test_generate_streams_tokens_from_engine():
         with client.stream("POST", "/generate", json={"prompt": "hi"}) as response:
             body = "".join(response.iter_text())
     assert body == "token_0token_1token_2"
+
+
+def test_engine_factory_is_built_lazily_at_startup_and_used():
+    registry_client = FakeRegistryClient()
+    built = []
+
+    def factory():
+        engine = MockEngine(num_tokens=2, token_delay_seconds=0, token_text="lazy")
+        built.append(engine)
+        return engine
+
+    settings = WorkerSettings(
+        model_name="demo",
+        endpoint_url="http://worker-a",
+        registry_client=registry_client,
+        engine_factory=factory,
+    )
+    app = create_app(settings)
+    assert built == []  # constructing the app must not build the engine
+
+    with TestClient(app) as client:
+        assert len(built) == 1  # built once, on startup
+        with client.stream("POST", "/generate", json={"prompt": "hi"}) as response:
+            body = "".join(response.iter_text())
+    assert body == "lazy_0lazy_1"

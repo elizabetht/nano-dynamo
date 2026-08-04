@@ -82,7 +82,12 @@ above. The ones you're most likely to touch:
 | `REGISTRY_PORT`  | `8000`                  | Registry           |
 | `WORKER_PORT`    | `8001`                  | Worker             |
 | `WORKER_MODEL_NAME` | `demo`               | Worker             |
+| `WORKER_ENGINE`  | `mock`                  | Worker (`mock` or `vllm`) |
 | `FRONTEND_PORT`  | `8080`                  | Frontend           |
+
+For real inference instead of the mock, set `WORKER_ENGINE=vllm` (needs a GPU
+and `pip install vllm`); see
+[`docs/appendix-bring-your-own-engine.md`](docs/appendix-bring-your-own-engine.md).
 
 To run two workers for the same model (and watch the Frontend round-robin
 between them), start a second Worker on a different port:
