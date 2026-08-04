@@ -1,0 +1,37 @@
+name: publish
+
+# Publishes the wheel + sdist to PyPI when a version tag is pushed, e.g.:
+#   git tag v0.1.0 && git push origin v0.1.0
+# setuptools-scm turns that tag into the package version (v0.1.0 -> 0.1.0).
+#
+# Uses PyPI Trusted Publishing (OIDC) -- no API token secret needed. One-time
+# PyPI-side setup required before the first run (see repo README / PyPI docs):
+#   PyPI -> your project -> Publishing -> add a GitHub trusted publisher with
+#     owner:       elizabetht
+#     repository:  nano-dynamo
+#     workflow:    publish.yml
+#     environment: pypi
+# For the very first publish (project doesn't exist on PyPI yet), add it as a
+# "pending publisher" on PyPI instead.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # required for trusted publishing (OIDC)
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # setuptools-scm needs the tag to compute the version
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1

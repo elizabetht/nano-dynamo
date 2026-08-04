@@ -1,6 +1,6 @@
 [project]
 name = "nano-dynamo"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A minimal, from-scratch teaching implementation of Dynamo's orchestration layer."
 requires-python = ">=3.11"
 dependencies = [
@@ -22,6 +22,11 @@ asyncio_mode = "auto"
 [tool.setuptools.packages.find]
 include = ["nano_dynamo*"]
 
+[tool.setuptools_scm]
+# Version is derived from the latest git tag (v0.1.0 -> 0.1.0). fallback_version
+# keeps builds from a gitless copy (no tags, no PKG-INFO) from hard-failing.
+fallback_version = "0.0.0"
+
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=68", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
