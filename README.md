@@ -3,7 +3,8 @@
 A minimal, from-scratch teaching implementation of
 [Dynamo](https://github.com/ai-dynamo/dynamo)'s orchestration layer — service
 discovery, heartbeat-based liveness, and request routing — in pure Python,
-modeled after nanoGPT and nano-vllm.
+modeled after [nanoGPT](https://github.com/karpathy/nanoGPT) and
+[nano-vllm](https://github.com/GeeeekExplorer/nano-vllm).
 
 Real Dynamo orchestrates real inference engines (vLLM, SGLang, TRT-LLM) at
 datacenter scale using a Rust core, etcd for discovery, and NATS for
