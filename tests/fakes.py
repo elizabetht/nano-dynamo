@@ -12,6 +12,7 @@ class FakeRegistryClient:
         self._next_id = 0
         self._fail_heartbeat_for: set[str] = set()
         self._cards_by_model: dict[str, list[ModelCard]] = {}
+        self._heartbeat_error: Exception | None = None
 
     async def register(self, request: RegisterRequest) -> str:
         self._next_id += 1
@@ -21,11 +22,21 @@ class FakeRegistryClient:
 
     async def heartbeat(self, worker_id: str) -> None:
         self.heartbeats.append(worker_id)
+        if self._heartbeat_error is not None:
+            raise self._heartbeat_error
         if worker_id in self._fail_heartbeat_for:
             raise WorkerNotFoundError(worker_id)
 
     def fail_next_heartbeat_for(self, worker_id: str) -> None:
         self._fail_heartbeat_for.add(worker_id)
+
+    def raise_on_heartbeat(self, error: Exception) -> None:
+        """Make every heartbeat raise `error` (simulates the Registry being
+        unreachable) until cleared with clear_heartbeat_error()."""
+        self._heartbeat_error = error
+
+    def clear_heartbeat_error(self) -> None:
+        self._heartbeat_error = None
 
     def set_workers(self, model_name: str, cards: list[ModelCard]) -> None:
         self._cards_by_model[model_name] = cards

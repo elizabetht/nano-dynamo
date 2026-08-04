@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import logging
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -10,6 +11,8 @@ from fastapi.responses import StreamingResponse
 from nano_dynamo.models import GenerateRequest, RegisterRequest
 from nano_dynamo.registry_client import RegistryClientProtocol, WorkerNotFoundError
 from nano_dynamo.worker.engine import Engine, MockEngine
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -67,16 +70,26 @@ def create_app(settings: WorkerSettings) -> FastAPI:
 
 
 async def _send_heartbeat_or_reregister(settings: WorkerSettings, state) -> None:
+    """One heartbeat attempt. Never raises: a transient Registry outage must not
+    kill the heartbeat loop, or the worker would stop heartbeating forever and
+    get reaped with no way back. On the next tick it retries; when the Registry
+    returns, the heartbeat either succeeds or 404s into a fresh registration."""
     try:
-        await settings.registry_client.heartbeat(state.worker_id)
-    except WorkerNotFoundError:
-        state.worker_id = await settings.registry_client.register(
-            RegisterRequest(
-                model_name=settings.model_name,
-                endpoint_url=settings.endpoint_url,
-                worker_type=settings.worker_type,
+        try:
+            await settings.registry_client.heartbeat(state.worker_id)
+        except WorkerNotFoundError:
+            # Registry forgot us (restart or TTL reap) -- rejoin from scratch.
+            state.worker_id = await settings.registry_client.register(
+                RegisterRequest(
+                    model_name=settings.model_name,
+                    endpoint_url=settings.endpoint_url,
+                    worker_type=settings.worker_type,
+                )
             )
-        )
+    except Exception:
+        # Registry unreachable or the re-registration itself failed. Log and let
+        # the loop retry on the next interval rather than dying.
+        logger.warning("heartbeat/re-registration failed; retrying next tick", exc_info=True)
 
 
 async def _heartbeat_loop(settings: WorkerSettings, state) -> None:

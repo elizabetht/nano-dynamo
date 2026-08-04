@@ -36,6 +36,24 @@ async def test_send_heartbeat_or_reregister_refreshes_existing_worker():
     assert state.worker_id == "worker-1"
 
 
+async def test_send_heartbeat_survives_registry_unavailable_and_recovers():
+    registry_client = FakeRegistryClient()
+    state = type("State", (), {})()
+    state.worker_id = "worker-1"
+
+    # Registry unreachable: a non-404 error must NOT propagate, or it would kill
+    # the heartbeat loop and the worker would never re-register.
+    registry_client.raise_on_heartbeat(RuntimeError("connection refused"))
+    await _send_heartbeat_or_reregister(_settings(registry_client), state)  # must not raise
+    assert registry_client.heartbeats == ["worker-1"]  # it did attempt
+    assert state.worker_id == "worker-1"  # unchanged
+
+    # Registry back: the next heartbeat just succeeds.
+    registry_client.clear_heartbeat_error()
+    await _send_heartbeat_or_reregister(_settings(registry_client), state)
+    assert registry_client.heartbeats == ["worker-1", "worker-1"]
+
+
 async def test_send_heartbeat_or_reregister_recovers_from_worker_not_found():
     registry_client = FakeRegistryClient()
     # Consume "worker-1" up front so the id issued by the recovery-path
