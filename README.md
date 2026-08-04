@@ -102,6 +102,60 @@ WORKER_PORT=8002 python -m nano_dynamo.worker.main
 pytest -v
 ```
 
+## Deploying
+
+Every host that runs a service needs the package installed there — it's one
+codebase, and the role is chosen at launch by the command and env vars. Pick
+whichever fits how many machines you're spreading across.
+
+### Single box (simplest)
+
+Run all three services on one machine, each in its own terminal, exactly as in
+the Chapter 1 walkthrough above. A single GPU box can even run the Registry,
+Frontend, and a `WORKER_ENGINE=vllm` worker together.
+
+### As a wheel (a few machines)
+
+Build once, then `pip install` the artifact on each host — no git checkout
+needed per node:
+
+```bash
+python -m build                       # produces dist/nano_dynamo-0.1.0-py3-none-any.whl
+# copy the wheel to each host, then on each:
+pip install nano_dynamo-0.1.0-py3-none-any.whl
+python -m nano_dynamo.registry.main   # or .frontend.main / .worker.main
+```
+
+### As a container (one image, many roles)
+
+The `Dockerfile` builds a single CPU-only image; you pick the service at
+`docker run` time — the same pattern real Dynamo uses (one image per node role).
+
+```bash
+docker build -t nano-dynamo .
+
+# each on its host (or all on one, on a shared docker network):
+docker run -p 8000:8000 nano-dynamo python -m nano_dynamo.registry.main
+docker run -p 8080:8080 -e REGISTRY_URL=http://<registry-host>:8000 \
+    nano-dynamo python -m nano_dynamo.frontend.main
+docker run -p 8001:8001 -e REGISTRY_URL=http://<registry-host>:8000 \
+    -e WORKER_ENDPOINT_URL=http://<worker-host>:8001 \
+    nano-dynamo python -m nano_dynamo.worker.main
+```
+
+The image sets `*_HOST=0.0.0.0` so services are reachable once their ports are
+published. Set `REGISTRY_URL` and `WORKER_ENDPOINT_URL` to addresses the other
+containers/hosts can actually dial (see the cross-machine notes in the
+appendix).
+
+### Real vLLM on a GPU
+
+The image above is CPU-only and runs the mock engine. For real inference you
+need vLLM, which requires a CUDA-capable base image — build a separate image
+`FROM` vLLM's official image (or a CUDA base with `pip install vllm` plus this
+wheel) and run the worker with `WORKER_ENGINE=vllm`. See
+[`docs/appendix-bring-your-own-engine.md`](docs/appendix-bring-your-own-engine.md).
+
 ## What's next
 
 - **Chapter 2** adds KV-cache-aware routing, replacing Chapter 1's
