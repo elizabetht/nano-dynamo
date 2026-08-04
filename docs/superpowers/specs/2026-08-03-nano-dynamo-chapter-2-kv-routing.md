@@ -58,19 +58,30 @@ nano-dynamo keeps the idea and drops the tokenizer.
 
 ## Where cache state lives (the key decision)
 
-**Approach A — Router-side approximation (chosen).** The Frontend keeps its own
-model of what each worker has probably cached, built from its own routing
-history: when it routes a request to worker W, it records that request's block
-hashes against W. No new communication channel — workers report nothing. Simple,
-stays HTTP-only, and teaches the scoring idea directly. Real Dynamo supports
-this "predict cache state from routing decisions" mode.
+**Approach A — Router-side approximation (chosen as the teaching stand-in).** The
+Frontend keeps its own model of what each worker has probably cached, built from
+its own routing history: when it routes a request to worker W, it records that
+request's block hashes against W. No new communication channel — workers report
+nothing. Simple, stays HTTP-only, and teaches the scoring idea directly.
 
-**Approach B — Worker-reported KV events (stretch, not built).** Workers announce
-which blocks they hold and evict, and the router tracks the truth. More
-faithful, but needs a whole new worker→Frontend event stream plus eviction
-modeling — much more machinery than the lesson needs.
+This is a deliberate simplification, **not** how production Dynamo works. Real
+Dynamo's steady-state cache picture comes from worker-reported KV events
+(Approach B below), not from guessing based on routing history. It does track
+in-flight *active sequences* predictively for requests that haven't emitted
+events yet, but the source of truth is real events, not the router's own
+history. Approach A is chosen here purely because it keeps Chapter 2's diff tiny
+and the architecture HTTP-only — see "How real Dynamo differs" for the honest
+gap.
 
-**Decision: A for the core chapter, B named as the natural Chapter 2.5.**
+**Approach B — Worker-reported KV events (how real Dynamo actually does it; the
+natural Chapter 2.5).** Workers announce which blocks they hold and evict, and
+the router tracks the truth in a shared radix tree. This is production Dynamo's
+primary mechanism, not a stretch in the "exotic" sense — it's simply more
+machinery than one teaching chapter should introduce at once (a worker→router
+event stream plus eviction modeling), so it's deferred rather than skipped.
+
+**Decision: A for the core chapter (labeled as the stand-in it is), B as
+Chapter 2.5 where fidelity to real Dynamo is the explicit goal.**
 
 Honest caveat to state in the chapter: Approach A assumes a single Frontend,
 because each Frontend only knows its own routing history. This is the same
@@ -169,6 +180,38 @@ Registry, worker registration/heartbeat/self-heal, `/generate`'s streaming, the
 503-on-no-workers path, the RegistryClient, and all of Chapter 1's tests. The
 chapter should actively resist folding in worker KV events, real tokenization,
 or eviction — each of those is its own later lesson.
+
+## How real Dynamo differs
+
+This chapter keeps the skeleton of Dynamo's KV router but simplifies several
+things. Verified against `lib/kv-router/src/` in the `ai-dynamo/dynamo` repo:
+
+- **Cache state source.** nano-dynamo predicts cache from routing history
+  (Approach A). Real Dynamo's primary mechanism is worker-reported KV events:
+  workers emit `Stored`/`Removed` events (over ZMQ, including translated vLLM
+  `BlockStored`/`BlockRemoved`), and an indexer applies them to a global radix
+  tree. `indexer/kv_indexer.rs`, `zmq_wire/mod.rs`.
+- **Block hashing.** The chained-hash idea matches, and this is the part
+  nano-dynamo is most faithful to. Real Dynamo hashes fixed 16-token blocks with
+  a sequential XXH3 chain (each block folds in the prefix before it), and has a
+  keyed variant for multi-tenant isolation. nano-dynamo hashes words instead of
+  real token IDs. `tracking_hash.rs`.
+- **Scoring.** nano-dynamo does lexicographic "best overlap, then least load."
+  Real Dynamo subtracts the cached overlap from input length to estimate the
+  *remaining prefill work* (`new_tokens = ISL − overlap`) and schedules with WSPT
+  / Smith's rule (`score = (1 + priority) / new_tokens`) — a continuous cost, not
+  a discrete tie-break. `scheduling/policy.rs`.
+- **Final pick.** nano-dynamo takes a deterministic argmax. Real Dynamo computes
+  per-worker logits and does **softmax sampling with a temperature** (temperature
+  0 collapses to argmax). `scheduling/selector.rs`.
+- **Scope.** Real Dynamo is a full scheduler, not just a picker: admission
+  control, prefill/decode disaggregation load, multi-tier overlap
+  (GPU/CPU/disk), active in-flight sequence tracking, event pruning, and
+  cross-replica sync. nano-dynamo omits all of it on purpose.
+
+The honest one-liner: nano-dynamo teaches *why* you'd route by cache overlap and
+*how* prefix hashing makes that possible; it does not reproduce Dynamo's
+event-driven, cost-based, sampled scheduler.
 
 ## Stretch goals (named, not built)
 
