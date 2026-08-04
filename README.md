@@ -114,21 +114,35 @@ Run all three services on one machine, each in its own terminal, exactly as in
 the Chapter 1 walkthrough above. A single GPU box can even run the Registry,
 Frontend, and a `WORKER_ENGINE=vllm` worker together.
 
-### As a wheel (a few machines)
+### Install from PyPI (recommended)
 
-Build once, then `pip install` the artifact on each host — no git checkout
-needed per node:
+On each host, install the package and launch whichever service that host runs —
+no git checkout needed per node:
 
 ```bash
-python -m build                       # produces dist/nano_dynamo-0.1.0-py3-none-any.whl
-# copy the wheel to each host, then on each:
-pip install nano_dynamo-0.1.0-py3-none-any.whl
+pip install nano-dynamo==0.1.0
+python -m nano_dynamo.registry.main   # or .frontend.main / .worker.main
+```
+
+**Pin the version.** `0.1.0` is Chapter 1 — round-robin worker scheduling. Pinning
+with `==0.1.0` keeps you on that behavior; a later release will add KV-cache-aware
+routing (Chapter 2), which changes how the Frontend selects workers. Installing
+unpinned (`pip install nano-dynamo`) always pulls the latest and would move you
+off round-robin once Chapter 2 ships.
+
+### Build a wheel locally (alternative)
+
+If you'd rather not go through PyPI, build the artifact and copy it to each host:
+
+```bash
+python -m build                       # produces dist/nano_dynamo-<version>-py3-none-any.whl
+pip install dist/nano_dynamo-*.whl
 python -m nano_dynamo.registry.main   # or .frontend.main / .worker.main
 ```
 
 ### Real vLLM on a GPU
 
-The wheel above installs the CPU-only mock path. For real inference, install
+The installs above bring the CPU-only mock path. For real inference, install
 vLLM alongside the wheel on the GPU host (`pip install vllm`) and run the worker
 with `WORKER_ENGINE=vllm`. See
 [`docs/appendix-bring-your-own-engine.md`](docs/appendix-bring-your-own-engine.md)
