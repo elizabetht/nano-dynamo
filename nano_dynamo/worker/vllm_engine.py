@@ -25,12 +25,37 @@ def _new_suffix(text: str, already_emitted: int) -> str:
     return text[already_emitted:] if len(text) > already_emitted else ""
 
 
+def _engine_args_kwargs(
+    model_name: str,
+    gpu_memory_utilization: float | None = None,
+    max_model_len: int | None = None,
+) -> dict:
+    """Build the AsyncEngineArgs kwargs, omitting any knob that wasn't set so
+    vLLM keeps its own defaults rather than being handed None."""
+    kwargs: dict = {"model": model_name}
+    if gpu_memory_utilization is not None:
+        kwargs["gpu_memory_utilization"] = gpu_memory_utilization
+    if max_model_len is not None:
+        kwargs["max_model_len"] = max_model_len
+    return kwargs
+
+
 class VLLMEngine:
-    def __init__(self, model_name: str, max_tokens: int = 256, temperature: float = 0.7):
+    def __init__(
+        self,
+        model_name: str,
+        max_tokens: int = 256,
+        temperature: float = 0.7,
+        gpu_memory_utilization: float | None = None,
+        max_model_len: int | None = None,
+    ):
         from vllm import AsyncEngineArgs, SamplingParams
         from vllm.v1.engine.async_llm import AsyncLLM
 
-        self._llm = AsyncLLM.from_engine_args(AsyncEngineArgs(model=model_name))
+        engine_args = AsyncEngineArgs(
+            **_engine_args_kwargs(model_name, gpu_memory_utilization, max_model_len)
+        )
+        self._llm = AsyncLLM.from_engine_args(engine_args)
         self._sampling_params = SamplingParams(
             max_tokens=max_tokens, temperature=temperature
         )

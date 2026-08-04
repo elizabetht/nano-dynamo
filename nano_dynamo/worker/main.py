@@ -108,7 +108,16 @@ if __name__ == "__main__":
     if os.environ.get("WORKER_ENGINE", "mock") == "vllm":
         from nano_dynamo.worker.vllm_engine import VLLMEngine
 
-        engine_factory = lambda: VLLMEngine(model_name)  # noqa: E731
+        # Optional vLLM knobs; unset means "use vLLM's default". Lowering
+        # WORKER_GPU_MEMORY_UTILIZATION lets a small model coexist with other
+        # GPU workloads instead of grabbing ~90% of the card.
+        gpu_util = os.environ.get("WORKER_GPU_MEMORY_UTILIZATION")
+        max_len = os.environ.get("WORKER_MAX_MODEL_LEN")
+        vllm_kwargs = {
+            "gpu_memory_utilization": float(gpu_util) if gpu_util else None,
+            "max_model_len": int(max_len) if max_len else None,
+        }
+        engine_factory = lambda: VLLMEngine(model_name, **vllm_kwargs)  # noqa: E731
 
     settings = WorkerSettings(
         model_name=model_name,

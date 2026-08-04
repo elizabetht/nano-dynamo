@@ -46,6 +46,27 @@ is needed to run the rest of the repo:
 WORKER_ENGINE=vllm WORKER_MODEL_NAME=Qwen/Qwen3-0.6B python -m nano_dynamo.worker.main
 ```
 
+### Fitting alongside other GPU workloads
+
+By default vLLM grabs ~90% of the GPU (`gpu_memory_utilization=0.9`), which for a
+small model is overkill and will fail if the card is already busy. Two optional
+knobs let a small model coexist with other workloads:
+
+```bash
+WORKER_ENGINE=vllm \
+WORKER_MODEL_NAME=Qwen/Qwen3-0.6B \
+WORKER_GPU_MEMORY_UTILIZATION=0.15 \
+WORKER_MAX_MODEL_LEN=2048 \
+python -m nano_dynamo.worker.main
+```
+
+- `WORKER_GPU_MEMORY_UTILIZATION` — fraction of GPU memory vLLM may use
+  (0.0–1.0). Lower it to leave room for other processes.
+- `WORKER_MAX_MODEL_LEN` — cap the context length, which shrinks the KV-cache
+  reservation. Unset means vLLM's default.
+
+Both are optional; leaving either unset keeps vLLM's own default.
+
 The Registry, Frontend, `RegistryClient`, routing, and streaming are all
 completely unaware of which engine is underneath. That boundary staying
 untouched is the point: pluggable backends beneath a stable orchestration layer

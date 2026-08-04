@@ -83,6 +83,8 @@ above. The ones you're most likely to touch:
 | `WORKER_PORT`    | `8001`                  | Worker             |
 | `WORKER_MODEL_NAME` | `demo`               | Worker             |
 | `WORKER_ENGINE`  | `mock`                  | Worker (`mock` or `vllm`) |
+| `WORKER_GPU_MEMORY_UTILIZATION` | vLLM default (~0.9) | Worker (vLLM) |
+| `WORKER_MAX_MODEL_LEN` | vLLM default        | Worker (vLLM)      |
 | `FRONTEND_PORT`  | `8080`                  | Frontend           |
 
 For real inference instead of the mock, set `WORKER_ENGINE=vllm` (needs a GPU
