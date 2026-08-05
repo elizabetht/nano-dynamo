@@ -122,15 +122,16 @@ On each host, install the package and launch whichever service that host runs �
 no git checkout needed per node:
 
 ```bash
-pip install nano-dynamo==0.1.0
+pip install nano-dynamo==0.1.1
 python -m nano_dynamo.registry.main   # or .frontend.main / .worker.main
 ```
 
-**Pin the version.** `0.1.0` is Chapter 1 — round-robin worker scheduling. Pinning
-with `==0.1.0` keeps you on that behavior; a later release will add KV-cache-aware
-routing (Chapter 2), which changes how the Frontend selects workers. Installing
-unpinned (`pip install nano-dynamo`) always pulls the latest and would move you
-off round-robin once Chapter 2 ships.
+**Pin the version.** The `0.1.x` line is Chapter 1 — round-robin worker
+scheduling (with optional real vLLM inference). Pinning with `==0.1.1` keeps you
+on that behavior; a later release will add KV-cache-aware routing (Chapter 2),
+which changes how the Frontend selects workers. Installing unpinned (`pip install
+nano-dynamo`) always pulls the latest and would move you off round-robin once
+Chapter 2 ships.
 
 ### Build a wheel locally (alternative)
 
