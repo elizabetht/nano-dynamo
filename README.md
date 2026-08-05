@@ -9,7 +9,7 @@ modeled after [nanoGPT](https://github.com/karpathy/nanoGPT) and
 Real Dynamo orchestrates real inference engines (vLLM, SGLang, TRT-LLM) at
 datacenter scale using a Rust core, etcd for discovery, and NATS for
 transport. nano-dynamo strips all of that away and keeps only the
-orchestration ideas: three independent services, a mocked inference engine,
+orchestration ideas: three independent services, a mocked or real inference engine,
 and plain HTTP.
 
 **One deliberate simplification worth naming up front:** real Dynamo's
