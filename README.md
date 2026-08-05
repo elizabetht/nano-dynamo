@@ -23,7 +23,7 @@ enough to teach the pattern, but not durable and not clustered.
 | Service   | Role                                                              | Default port |
 |-----------|------------------------------------------------------------------|--------------|
 | Registry  | Source of truth for "who's alive"; stands in for etcd            | 8000         |
-| Worker    | Generates tokens (mocked); registers + heartbeats to the Registry | 8001         |
+| Worker    | Generates tokens (mock by default; real via vLLM); registers + heartbeats to the Registry | 8001         |
 | Frontend  | Client-facing API; finds live workers and routes/streams to them  | 8080         |
 
 They only ever talk to each other over HTTP. See each service's own README
@@ -120,9 +120,8 @@ above. The ones you're most likely to touch:
 | `WORKER_MAX_MODEL_LEN` | vLLM default        | Worker (vLLM)      |
 | `FRONTEND_PORT`  | `8080`                  | Frontend           |
 
-For real inference instead of the mock, set `WORKER_ENGINE=vllm` (needs a GPU
-and `pip install vllm`); see
-[`docs/appendix-bring-your-own-engine.md`](docs/appendix-bring-your-own-engine.md).
+The vLLM knobs are covered in [Run with real vLLM](#run-with-real-vllm-instead-of-the-mock-optional)
+above.
 
 To run two workers for the same model (and watch the Frontend round-robin
 between them), start a second Worker on a different port:
@@ -178,11 +177,11 @@ python -m nano_dynamo.registry.main   # or .frontend.main / .worker.main
 
 ### Real vLLM on a GPU
 
-The installs above bring the CPU-only mock path. For real inference, install
-vLLM alongside the wheel on the GPU host (`pip install vllm`) and run the worker
-with `WORKER_ENGINE=vllm`. See
-[`docs/appendix-bring-your-own-engine.md`](docs/appendix-bring-your-own-engine.md)
-for the model settings and cross-machine wiring.
+The installs above bring the CPU-only mock path; `pip install vllm` on the GPU
+host adds real inference. For the launch command and knobs see
+[Run with real vLLM](#run-with-real-vllm-instead-of-the-mock-optional) above,
+and [`docs/appendix-bring-your-own-engine.md`](docs/appendix-bring-your-own-engine.md)
+for cross-machine wiring.
 
 ## What's next
 
