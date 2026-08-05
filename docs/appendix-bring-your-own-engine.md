@@ -72,6 +72,59 @@ completely unaware of which engine is underneath. That boundary staying
 untouched is the point: pluggable backends beneath a stable orchestration layer
 is a real Dynamo concept, not a nano-dynamo invention.
 
+## A second backend: SGLang (sketch)
+
+Real Dynamo also supports SGLang and TRT-LLM. To drive the pluggability point
+home: a second engine is the *same* ~20 lines against the *same* `Engine`
+protocol, and — this is the whole lesson — **nothing else in nano-dynamo
+changes**. No Registry change, no Frontend change, no routing change. Just
+another class and a new `WORKER_ENGINE` branch.
+
+This is a sketch, not shipped/maintained code (nano-dynamo keeps only the vLLM
+example green). SGLang's engine API is version-sensitive, like vLLM's — check
+your installed version's surface before relying on it.
+
+```python
+# nano_dynamo/worker/sglang_engine.py  (illustrative)
+import uuid
+from collections.abc import AsyncIterator
+
+
+def _new_suffix(text: str, already_emitted: int) -> str:
+    return text[already_emitted:] if len(text) > already_emitted else ""
+
+
+class SGLangEngine:
+    def __init__(self, model_name: str, max_tokens: int = 256):
+        import sglang as sgl
+
+        self._engine = sgl.Engine(model_path=model_name)
+        self._sampling_params = {"max_new_tokens": max_tokens, "temperature": 0.7}
+
+    async def generate(self, prompt: str) -> AsyncIterator[str]:
+        emitted = 0
+        # SGLang, like vLLM, streams cumulative text -- diff it into deltas.
+        async for chunk in await self._engine.async_generate(
+            prompt, self._sampling_params, stream=True
+        ):
+            delta = _new_suffix(chunk["text"], emitted)
+            if delta:
+                yield delta
+                emitted += len(delta)
+```
+
+Wiring it in would mirror the vLLM branch in `nano_dynamo/worker/main.py`:
+
+```python
+elif os.environ.get("WORKER_ENGINE") == "sglang":
+    from nano_dynamo.worker.sglang_engine import SGLangEngine
+    engine_factory = lambda: SGLangEngine(model_name)
+```
+
+That's the entire integration surface for a new backend. Everything above the
+engine — discovery, heartbeats, routing, streaming — is written against the
+interface, not the implementation, so it never has to know SGLang exists.
+
 ## Running across machines
 
 Only the vLLM worker needs a GPU. Where everything else runs is up to you — the
