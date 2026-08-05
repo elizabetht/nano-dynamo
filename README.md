@@ -71,6 +71,39 @@ dead worker — this is the bug class Chapter 1 is designed to avoid by
 construction: the Frontend never silently reports itself as ready with zero
 usable workers behind it.
 
+## Run with real vLLM instead of the mock (optional)
+
+Everything above uses the mock engine, so it runs anywhere with no GPU. To
+serve real tokens, run the Worker with `WORKER_ENGINE=vllm` on a GPU host
+(`pip install vllm` first). Keep the Registry and Frontend exactly as above —
+only the Worker command changes:
+
+```bash
+# terminal 2 — Worker, now backed by vLLM
+WORKER_ENGINE=vllm \
+WORKER_MODEL_NAME=Qwen/Qwen3-0.6B \
+WORKER_GPU_MEMORY_UTILIZATION=0.2 \
+WORKER_MAX_MODEL_LEN=2048 \
+python -m nano_dynamo.worker.main
+```
+
+vLLM will download and load the model (a real pause with lots of vLLM logs);
+the Worker only registers once loading finishes. Then test it — note the
+`"model"` field **must match** `WORKER_MODEL_NAME`, since the Frontend routes by
+model name (a mismatch is the most common cause of a `503`):
+
+```bash
+curl -N -X POST http://127.0.0.1:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "Qwen/Qwen3-0.6B", "messages": [{"role": "user", "content": "Say hello in one sentence."}]}'
+```
+
+`WORKER_GPU_MEMORY_UTILIZATION` (fraction of GPU memory vLLM may claim) lets a
+small model share a busy GPU instead of grabbing vLLM's default ~90%; both it
+and `WORKER_MAX_MODEL_LEN` are optional. See
+[`docs/appendix-bring-your-own-engine.md`](docs/appendix-bring-your-own-engine.md)
+for cross-machine wiring and the `Engine` interface.
+
 ## Configuration
 
 Every service reads its config from environment variables, with the defaults
