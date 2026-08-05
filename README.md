@@ -188,6 +188,3 @@ for cross-machine wiring.
 - **Chapter 2** adds KV-cache-aware routing, replacing Chapter 1's
   round-robin worker selection.
 - **Chapter 3** adds disaggregated prefill/decode serving.
-- See [`docs/appendix-bring-your-own-engine.md`](docs/appendix-bring-your-own-engine.md)
-  for an optional, non-core extension: swapping the mocked engine for a real
-  one.
