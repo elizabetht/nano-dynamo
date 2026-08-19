@@ -12,6 +12,11 @@ class KVRouter:
 
     def __init__(self, block_size: int = 16):
         self.block_size = block_size
+        # In-flight requests per worker; an absent worker means 0. This is the
+        # counterweight to cache affinity in `select`: routing purely by longest
+        # prefix match would pile every request sharing a common prefix onto a
+        # single worker while the rest sit idle.
+        self.inflight: dict[str, int] = {}
 
     def block_hashes(self, prompt: str) -> list[str]:
         """Split the prompt into fixed-size word blocks and chain-hash them, so
@@ -25,3 +30,9 @@ class KVRouter:
             prev = hashlib.blake2b((prev + "\x00" + block).encode()).hexdigest()
             hashes.append(prev)
         return hashes
+
+    def acquire(self, worker_id: str) -> None:
+        self.inflight[worker_id] = self.inflight.get(worker_id, 0) + 1
+
+    def release(self, worker_id: str) -> None:
+        self.inflight[worker_id] = max(0, self.inflight.get(worker_id, 0) - 1)
