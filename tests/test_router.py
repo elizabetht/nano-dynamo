@@ -114,3 +114,23 @@ def test_select_round_robins_among_equally_loaded_cold_candidates():
     a = router.select(workers, "alpha beta")
     b = router.select(workers, "gamma delta")
     assert {a.worker_id, b.worker_id} == {"w1", "w2"}
+
+
+def test_record_then_same_prompt_routes_to_same_worker():
+    router = KVRouter(block_size=2)
+    workers = [_card("w1"), _card("w2")]
+    first = router.select(workers, "keep this together")
+    router.record(first.worker_id, "keep this together")
+    # A second identical prompt should now prefer the worker that served it.
+    second = router.select(workers, "keep this together")
+    assert second.worker_id == first.worker_id
+
+
+def test_record_makes_prefix_sharing_prompt_route_together():
+    router = KVRouter(block_size=2)
+    workers = [_card("w1"), _card("w2")]
+    router.record("w1", "the quick brown fox")
+    # Shares the first two blocks ("the quick", "brown ...") -> should hit w1,
+    # even though w2 is equally idle.
+    chosen = router.select(workers, "the quick brown dog")
+    assert chosen.worker_id == "w1"

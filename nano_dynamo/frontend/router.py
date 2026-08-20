@@ -62,6 +62,12 @@ class KVRouter:
         self._rr += 1
         return chosen
 
+    def record(self, worker_id: str, prompt: str) -> None:
+        """Remember that `worker_id` has now processed `prompt`, so future
+        prefix-sharing prompts route back to it (Approach A prediction)."""
+        for h in self.block_hashes(prompt):
+            self.prefix_owners.setdefault(h, set()).add(worker_id)
+
     def acquire(self, worker_id: str) -> None:
         self.inflight[worker_id] = self.inflight.get(worker_id, 0) + 1
 
