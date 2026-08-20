@@ -126,6 +126,83 @@ told by the workers, which is a real simplification with real limits — see
 [`nano_dynamo/frontend/README.md`](nano_dynamo/frontend/README.md) for the
 algorithm and an honest list of what it gets wrong.
 
+### Verifying it with two real vLLM workers
+
+Routing only becomes observable with two workers serving the same model. The
+run below used three machines — a CPU host for the Registry and Frontend, and
+two GPU hosts each running a vLLM worker — but two workers on one box with
+different `WORKER_PORT`s works the same way.
+
+```bash
+# CPU host (192.168.1.75) — Registry, then Frontend
+REGISTRY_HOST=0.0.0.0 python -m nano_dynamo.registry.main
+FRONTEND_HOST=0.0.0.0 REGISTRY_URL=http://127.0.0.1:8000 python -m nano_dynamo.frontend.main
+
+# each GPU host — same WORKER_MODEL_NAME, its own WORKER_ENDPOINT_URL
+WORKER_ENGINE=vllm \
+WORKER_MODEL_NAME=Qwen/Qwen3-0.6B \
+WORKER_HOST=0.0.0.0 \
+WORKER_ENDPOINT_URL=http://192.168.1.76:8001 \
+REGISTRY_URL=http://192.168.1.75:8000 \
+WORKER_GPU_MEMORY_UTILIZATION=0.2 \
+WORKER_MAX_MODEL_LEN=2048 \
+python -m nano_dynamo.worker.main
+```
+
+Wait until both appear, then send the same prompt twice:
+
+```bash
+curl -s "http://192.168.1.75:8000/workers?model_name=Qwen/Qwen3-0.6B"
+
+PROMPT="You are a helpful assistant. Answer using only the following context. The capital of France is Paris and its population is about two million people. What is the capital?"
+for i in 1 2; do
+  curl -s -N -X POST http://192.168.1.75:8080/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d "{\"model\": \"Qwen/Qwen3-0.6B\", \"messages\": [{\"role\": \"user\", \"content\": \"$PROMPT\"}]}"
+done
+```
+
+Each worker logs a line per request, so count them on each GPU host to see where
+the two requests went:
+
+```bash
+grep -c "POST /generate" <worker log>
+```
+
+Both requests land on **one** worker — the second is a cache hit, so the router
+sends it back to the worker that already holds the prefix:
+
+| Frontend version | worker A | worker B |
+|------------------|----------|----------|
+| `0.2.0` (KV-aware)   | **+2**   | +0       |
+| `0.1.1` (round-robin) | +1       | +1       |
+
+Downgrading only the Frontend (`pip install nano-dynamo==0.1.1`, restart it, and
+leave the workers untouched) reproduces the bottom row — the same prompt gets
+split across both workers, recomputing the prefix on the second one.
+
+Prompts don't have to be identical, only prefix-sharing. Change the last few
+words (`What is the population?`) and the request still routes to the same
+worker, because the blocks before the change hash the same.
+
+Four things that will otherwise look like bugs:
+
+- **Short prompts prove nothing.** The Frontend hashes `"user: <content>"` in
+  16-word blocks, so about 15 shared content words are needed before a single
+  block matches. `"hi"` twice shares no block hash at all.
+- **A cold prompt's worker is not predictable.** The round-robin cursor advances
+  on every selection, including cache hits, so an unrelated prompt won't
+  reliably land on "the other" worker. Two unrelated prompts back to back do
+  alternate.
+- **Restarting the Frontend forgets everything.** `prefix_owners` is in-process
+  memory, so the first prompt after a restart is always cold.
+- **You won't see a speedup at this size.** A 0.6B model with a 30-word prompt
+  prefills in milliseconds, so the saved work is lost in the noise. Routing is
+  what's observable here, not latency. vLLM confirms prefix caching is active in
+  its startup config line (`enable_prefix_caching=True`), but driving `AsyncLLM`
+  in-process doesn't start vLLM's periodic stats logger, so there's no hit-rate
+  line in the worker log to read.
+
 ## Configuration
 
 Every service reads its config from environment variables, with the defaults
