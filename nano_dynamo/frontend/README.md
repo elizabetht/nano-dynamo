@@ -15,7 +15,8 @@ async def chat_completions(request: ChatCompletionRequest):
     workers = await settings.registry_client.list_workers(request.model)
     if not workers:
         raise HTTPException(status_code=503, detail=...)
-    worker = workers[next(counter) % len(workers)]
+    prompt = "\n".join(f"{m.role}: {m.content}" for m in request.messages)
+    worker = router.select(workers, prompt)
     ...
     return StreamingResponse(token_stream(), media_type="text/plain")
 ```
@@ -24,25 +25,72 @@ async def chat_completions(request: ChatCompletionRequest):
    Frontend has no worker list of its own — it asks every time, so a worker
    that was just reaped simply won't appear).
 2. **503 if there are none** — see "Why the 503 matters" below.
-3. **Pick one, round-robin** (see below).
-4. **Flatten the chat messages** into one plain-text prompt. Chapter 1 doesn't
-   need anything richer — `MockEngine` ignores the prompt entirely.
+3. **Flatten the chat messages** into one plain-text prompt.
+4. **Pick a worker by cache affinity** (see below).
 5. **Stream the worker's tokens back** through a `StreamingResponse`.
 
-## Round-robin routing
+## KV-aware routing
+
+Chapter 1 picked a worker round-robin. Chapter 2 replaces that one line with a
+`KVRouter` (`router.py`) that tries to send each prompt to the worker most
+likely to already hold its prefix in KV cache — a prefix already in cache
+doesn't need recomputing, which is where the speedup comes from.
+
+**Block-hash chains.** `block_hashes` splits a prompt into fixed-size blocks of
+16 whitespace-separated words and chain-hashes them, folding each hash into the
+next:
 
 ```python
-counter = count()                       # created once per app, in create_app
-...
-worker = workers[next(counter) % len(workers)]
+h_0 = blake2b(""  + "\0" + block_0)     # covers block 0
+h_1 = blake2b(h_0 + "\0" + block_1)     # covers blocks 0..1
 ```
 
-`itertools.count()` yields `0, 1, 2, ...`. Because the counter is created once
-in `create_app` and captured by the route via closure, every request through
-one Frontend instance shares it — so requests fan out across the live workers
-in turn (`% len(workers)` wraps the index to however many are currently alive).
-This is the exact seam where Chapter 2's KV-cache-aware routing will later
-replace the round-robin pick — nothing else about the Frontend changes.
+Because `h_k` depends on every word before it, two prompts sharing `h_k` are
+guaranteed to share their first `k+1` blocks word for word. Prefix overlap
+becomes a hash comparison. The hash is `hashlib.blake2b`, never Python's
+built-in `hash()` — that one is randomized per process, so cached prefixes
+would stop matching after a restart.
+
+**Predicting cache state (Approach A).** Workers report nothing. After routing,
+`record(worker_id, prompt)` files every one of the prompt's block hashes under
+that worker in `prefix_owners`, so the router predicts what each worker holds
+purely from its own routing history.
+
+**Selection.** `select` walks the prompt's hashes *backwards* — deepest prefix
+first — and stops at the first one owned by a live worker, then breaks ties:
+
+1. **Longest cached prefix** wins outright, even against an idler worker.
+2. **Least in-flight load** among those, tracked by `acquire`/`release` around
+   the stream. Without this, every request sharing a system prompt would pile
+   onto one worker.
+3. **Round-robin** among what's left — Chapter 1's behavior, now the bottom
+   tier. With an empty cache map and idle workers, Chapter 2 reduces exactly
+   to Chapter 1.
+
+The Registry stays the source of truth for liveness: each level intersects with
+the live worker list, so a reaped worker holding a deep prefix can never shadow
+a live one holding a shallower prefix.
+
+**Honest limitations.** This is a teaching implementation, and it predicts
+rather than knows:
+
+- **Block granularity is coarse.** Overlap counts only in whole 16-word blocks,
+  so two prompts sharing 20 words but diverging at word 17 share just one
+  block — the extra 4 words buy nothing.
+- **Nothing ever evicts.** `prefix_owners` only grows. The router never learns
+  that a worker's KV cache actually evicted those blocks, so a "hit" may be
+  stale, and memory grows with unique prompt prefixes. `select` compensates
+  only for *worker* death, by intersecting with the live list on every read.
+- **Words are not tokens.** Real prefix caching works on tokenizer output; this
+  approximates with `str.split()`, so block boundaries don't line up with a
+  real engine's.
+- **One Frontend assumed.** `prefix_owners` and `inflight` are in-process
+  dicts. Run two Frontend replicas and each sees only its own traffic, so
+  affinity degrades toward round-robin.
+
+Real Dynamo avoids the guessing: workers publish KV cache events, so the router
+tracks what's *actually* cached — including evictions — across any number of
+frontends.
 
 ## Why the 503 matters
 
@@ -69,12 +117,19 @@ async def token_stream():
                 yield chunk
     except Exception as exc:
         yield f"\n[error: worker unavailable: {exc}]"
+    finally:
+        router.release(worker.worker_id)
 ```
 
 The client gets whatever partial output already streamed, followed by a clean
 error marker — rather than a hung connection or a stack trace. The `except`
 is deliberately broad because the failure can be a network error *or* an
 exception propagating out of the worker's own generator.
+
+The `finally` matters just as much: the worker's in-flight count was
+incremented before the stream started, and a crash must still decrement it.
+Otherwise a phantom count would make that worker look permanently busy and the
+load tier would route around it forever.
 
 ## Dependency injection: `FrontendSettings`
 

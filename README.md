@@ -24,7 +24,7 @@ enough to teach the pattern, but not durable and not clustered.
 |-----------|------------------------------------------------------------------|--------------|
 | Registry  | Source of truth for "who's alive"; stands in for etcd            | 8000         |
 | Worker    | Generates tokens (mock by default; real via vLLM); registers + heartbeats to the Registry | 8001         |
-| Frontend  | Client-facing API; finds live workers and routes/streams to them  | 8080         |
+| Frontend  | Client-facing API; finds live workers and routes/streams to them, KV-cache-aware | 8080         |
 
 They only ever talk to each other over HTTP. See each service's own README
 (`nano_dynamo/registry/`, `nano_dynamo/worker/`) for the details of how it
@@ -104,6 +104,28 @@ and `WORKER_MAX_MODEL_LEN` are optional. See
 [`docs/appendix-bring-your-own-engine.md`](docs/appendix-bring-your-own-engine.md)
 for cross-machine wiring and the `Engine` interface.
 
+## Chapter 2: KV-cache-aware routing
+
+Chapter 1's Frontend picked workers round-robin. Chapter 2 replaces that with a
+`KVRouter` that sends each prompt to the worker most likely to already hold its
+prefix in KV cache — a cached prefix doesn't need recomputing.
+
+It hashes each prompt into a chain of 16-word block hashes (so a shared hash
+proves a shared prefix), remembers which worker it sent each prompt to, and
+picks by longest cached-prefix overlap, breaking ties by least in-flight load
+and then round-robin. Nothing else changes: same endpoint, same streaming, same
+`503`, same Registry. With no cache history and idle workers it behaves exactly
+like Chapter 1.
+
+Nothing new to run — the walkthrough above already uses it. With two workers up,
+send two prompts that share a long opening and they'll land on the same worker;
+send two unrelated prompts and they'll spread.
+
+The router predicts cache state from its own routing history rather than being
+told by the workers, which is a real simplification with real limits — see
+[`nano_dynamo/frontend/README.md`](nano_dynamo/frontend/README.md) for the
+algorithm and an honest list of what it gets wrong.
+
 ## Configuration
 
 Every service reads its config from environment variables, with the defaults
@@ -123,8 +145,8 @@ above. The ones you're most likely to touch:
 The vLLM knobs are covered in [Run with real vLLM](#run-with-real-vllm-instead-of-the-mock-optional)
 above.
 
-To run two workers for the same model (and watch the Frontend round-robin
-between them), start a second Worker on a different port:
+To run two workers for the same model (and watch the Frontend spread requests
+across them), start a second Worker on a different port:
 
 ```bash
 WORKER_PORT=8002 python -m nano_dynamo.worker.main
@@ -159,11 +181,10 @@ python -m nano_dynamo.registry.main   # or .frontend.main / .worker.main
 ```
 
 **Pin the version.** The `0.1.x` line is Chapter 1 — round-robin worker
-scheduling (with optional real vLLM inference). Pinning with `==0.1.1` keeps you
-on that behavior; a later release will add KV-cache-aware routing (Chapter 2),
-which changes how the Frontend selects workers. Installing unpinned (`pip install
-nano-dynamo`) always pulls the latest and would move you off round-robin once
-Chapter 2 ships.
+scheduling (with optional real vLLM inference). The `0.2.x` line is Chapter 2 —
+KV-cache-aware routing, which changes how the Frontend selects workers. Pinning
+with `==0.1.1` keeps you on round-robin; installing unpinned (`pip install
+nano-dynamo`) always pulls the latest.
 
 ### Build a wheel locally (alternative)
 
@@ -185,6 +206,4 @@ for cross-machine wiring.
 
 ## What's next
 
-- **Chapter 2** adds KV-cache-aware routing, replacing Chapter 1's
-  round-robin worker selection.
 - **Chapter 3** adds disaggregated prefill/decode serving.
