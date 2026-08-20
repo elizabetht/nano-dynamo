@@ -1,6 +1,6 @@
 # nano-dynamo Chapter 2: KV-Aware Routing Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Replace the Frontend's round-robin worker selection with cache-aware routing — send each request to the worker most likely to already hold its prompt's prefix in KV cache — while leaving every other Chapter 1 behavior untouched.
 
@@ -46,7 +46,7 @@ Chapter 2 introduces exactly one new source file (`router.py`) and modifies `fro
 **Interfaces:**
 - Produces: `KVRouter(block_size: int = 16)`, `KVRouter.block_hashes(prompt: str) -> list[str]` — the chained list `[h_0, h_1, ..., h_n]` where each `h_k` is a hex digest that depends on words `0..k`. Consumed by every later task.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/test_router.py
@@ -91,12 +91,12 @@ def test_block_hashes_are_deterministic():
     assert KVRouter().block_hashes("hello world foo") == KVRouter().block_hashes("hello world foo")
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pytest tests/test_router.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'nano_dynamo.frontend.router'`
 
-- [ ] **Step 3: Write `nano_dynamo/frontend/router.py`**
+- [x] **Step 3: Write `nano_dynamo/frontend/router.py`**
 
 ```python
 # nano_dynamo/frontend/router.py
@@ -129,12 +129,12 @@ class KVRouter:
         return hashes
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `pytest tests/test_router.py -v`
 Expected: 5 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nano_dynamo/frontend/router.py tests/test_router.py
@@ -155,7 +155,7 @@ Signed-off-by: elizabetht <email2eliza@gmail.com>"
 - Consumes: `KVRouter` (Task 1).
 - Produces: `KVRouter.inflight: dict[str, int]` (worker_id → current in-flight count, absent means 0), `KVRouter.acquire(worker_id: str) -> None` (increment), `KVRouter.release(worker_id: str) -> None` (decrement, never below 0). Consumed by Task 3 (`select` tie-break) and Task 5 (Frontend wraps the stream).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/test_router.py  (append)
@@ -175,12 +175,12 @@ def test_release_never_goes_negative():
     assert router.inflight.get("w1", 0) == 0
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pytest tests/test_router.py -v`
 Expected: FAIL with `AttributeError: 'KVRouter' object has no attribute 'inflight'`
 
-- [ ] **Step 3: Add in-flight tracking to `KVRouter`**
+- [x] **Step 3: Add in-flight tracking to `KVRouter`**
 
 Replace `__init__` and add the two methods:
 
@@ -198,12 +198,12 @@ Replace `__init__` and add the two methods:
         self.inflight[worker_id] = max(0, self.inflight.get(worker_id, 0) - 1)
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `pytest tests/test_router.py -v`
 Expected: 7 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nano_dynamo/frontend/router.py tests/test_router.py
@@ -224,7 +224,7 @@ Signed-off-by: elizabetht <email2eliza@gmail.com>"
 - Consumes: `KVRouter`, `block_hashes` (Task 1), `inflight`/`acquire` (Task 2); `ModelCard` from `nano_dynamo.models` (Chapter 1) — fields used: `worker_id`, `endpoint_url`, `model_name`.
 - Produces: `KVRouter.select(workers: list[ModelCard], prompt: str) -> ModelCard`. Assumes `workers` is non-empty (the Frontend already 503s on empty). Uses an internal `prefix_owners: dict[str, set[str]]` (block-hash → worker_ids) that starts empty and is filled by `record` (Task 4), and a round-robin cursor `_rr` for breaking equal-load ties. Consumed by Task 5.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/test_router.py  (append)
@@ -295,12 +295,12 @@ def test_select_round_robins_among_equally_loaded_cold_candidates():
     assert {a.worker_id, b.worker_id} == {"w1", "w2"}
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pytest tests/test_router.py -v`
 Expected: FAIL — `prefix_owners` attribute missing / `select` not defined.
 
-- [ ] **Step 3: Implement `prefix_owners`, `_rr`, and `select`**
+- [x] **Step 3: Implement `prefix_owners`, `_rr`, and `select`**
 
 Replace `__init__` to add the two new fields:
 
@@ -345,12 +345,12 @@ Add the method:
         return chosen
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `pytest tests/test_router.py -v`
 Expected: 13 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nano_dynamo/frontend/router.py tests/test_router.py
@@ -371,7 +371,7 @@ Signed-off-by: elizabetht <email2eliza@gmail.com>"
 - Consumes: `KVRouter`, `block_hashes`, `prefix_owners`, `select` (Tasks 1-3).
 - Produces: `KVRouter.record(worker_id: str, prompt: str) -> None` — adds every block hash of `prompt` to `prefix_owners` under `worker_id`. This is the "Approach A" learning step. Consumed by Task 5.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/test_router.py  (append)
@@ -395,12 +395,12 @@ def test_record_makes_prefix_sharing_prompt_route_together():
     assert chosen.worker_id == "w1"
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pytest tests/test_router.py -v`
 Expected: FAIL with `AttributeError: 'KVRouter' object has no attribute 'record'`
 
-- [ ] **Step 3: Implement `record`**
+- [x] **Step 3: Implement `record`**
 
 ```python
     def record(self, worker_id: str, prompt: str) -> None:
@@ -410,12 +410,12 @@ Expected: FAIL with `AttributeError: 'KVRouter' object has no attribute 'record'
             self.prefix_owners.setdefault(h, set()).add(worker_id)
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `pytest tests/test_router.py -v`
 Expected: 15 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nano_dynamo/frontend/router.py tests/test_router.py
@@ -436,7 +436,7 @@ Signed-off-by: elizabetht <email2eliza@gmail.com>"
 - Consumes: `KVRouter` with `select`, `record`, `acquire`, `release` (Tasks 1-4); the existing `FrontendSettings`, `create_app`, `worker_client_factory`, and the `token_stream` structure (Chapter 1); `FlakyWorkerClient`, `FakeRegistryClient`, `MockEngine`, `_worker_app`, `_factory_for`, `_card`, `_chat_request` (already imported/defined at the top of `tests/test_frontend.py` from Chapter 1).
 - Produces: `create_app` now builds a `KVRouter` internally (exposed as `app.state.kv_router` for tests) and routes through it instead of the round-robin `counter`. Prefix-sharing requests route to the same worker; a worker's in-flight count is incremented before its stream and decremented in a `finally` so it never leaks on failure.
 
-- [ ] **Step 1: Write the failing tests, and update the Chapter 1 round-robin test**
+- [x] **Step 1: Write the failing tests, and update the Chapter 1 round-robin test**
 
 Append two new tests:
 
@@ -507,12 +507,12 @@ Then change the existing `test_round_robins_across_two_workers`: it currently se
     assert set(bodies) == {"from-a_0", "from-b_0"}
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pytest tests/test_frontend.py -v`
 Expected: FAIL — `app.state.kv_router` does not exist, and prefix-sharing requests do not yet route together.
 
-- [ ] **Step 3: Route through `KVRouter` in `create_app`**
+- [x] **Step 3: Route through `KVRouter` in `create_app`**
 
 In `nano_dynamo/frontend/main.py`: add the import, drop `from itertools import count`, and replace the `create_app` body:
 
@@ -559,17 +559,17 @@ def create_app(settings: FrontendSettings) -> FastAPI:
     return app
 ```
 
-- [ ] **Step 4: Run the frontend tests**
+- [x] **Step 4: Run the frontend tests**
 
 Run: `pytest tests/test_frontend.py -v`
 Expected: all pass — the 503, single-worker-stream, updated round-robin, mid-stream-error, and two new tests.
 
-- [ ] **Step 5: Run the full suite**
+- [x] **Step 5: Run the full suite**
 
 Run: `pytest -v`
 Expected: all pass — Chapter 1 tests, the 15 router tests, and the frontend tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nano_dynamo/frontend/main.py tests/test_frontend.py
@@ -589,20 +589,20 @@ Signed-off-by: elizabetht <email2eliza@gmail.com>"
 **Interfaces:**
 - Consumes: nothing programmatically — documents Tasks 1-5.
 
-- [ ] **Step 1: Update the Frontend README's routing section**
+- [x] **Step 1: Update the Frontend README's routing section**
 
 In `nano_dynamo/frontend/README.md`, replace the "Round-robin routing" section with a "KV-aware routing" section explaining: block-hash chains, that the router predicts cache state from its own routing history (Approach A), longest-prefix-overlap selection with least-load-then-round-robin tie-break, and that this is the seam Chapter 1's round-robin used to occupy. Add the honest caveat that Approach A assumes a single Frontend and real Dynamo uses worker-reported KV events. Keep it to ~25 lines, matching the file's tone.
 
-- [ ] **Step 2: Update the top-level README**
+- [x] **Step 2: Update the top-level README**
 
 In `README.md`: change the services table and any prose that calls the Frontend "round-robin" to "KV-cache-aware" (keeping historical references like "Chapter 1's round-robin" intact). In "What's next", remove the Chapter 2 line, leaving Chapter 3 (disaggregated prefill/decode). Update the "Pin the version" note: `0.1.x` is round-robin, `0.2.x` is KV-aware routing.
 
-- [ ] **Step 3: Verify docs match code**
+- [x] **Step 3: Verify docs match code**
 
 Run: `grep -rn "round-robin" README.md nano_dynamo/frontend/README.md`
 Expected: only historical references (e.g. "Chapter 1's round-robin", "0.1.x is round-robin"), no claim that the *current* Frontend selects round-robin.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add README.md nano_dynamo/frontend/README.md
