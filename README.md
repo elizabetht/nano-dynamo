@@ -182,13 +182,19 @@ Wait until both appear, then send the same prompt twice:
 ```bash
 curl -s "http://192.168.1.75:8000/workers?model_name=Qwen/Qwen3-0.6B"
 
-PROMPT="You are a helpful assistant. Answer using only the following context. The capital of France is Paris and its population is about two million people. What is the capital?"
+NANO_PROMPT="You are a helpful assistant. Answer using only the following context. The capital of France is Paris and its population is about two million people. What is the capital?"
 for i in 1 2; do
   curl -s -N -X POST http://192.168.1.75:8080/v1/chat/completions \
     -H "Content-Type: application/json" \
-    -d "{\"model\": \"Qwen/Qwen3-0.6B\", \"messages\": [{\"role\": \"user\", \"content\": \"$PROMPT\"}]}"
+    -d "{\"model\": \"Qwen/Qwen3-0.6B\", \"messages\": [{\"role\": \"user\", \"content\": \"$NANO_PROMPT\"}]}"
 done
 ```
+
+(The variable is `NANO_PROMPT`, not `PROMPT`, because zsh uses `PROMPT` for the
+shell prompt itself — assigning to it silently replaces your prompt with the
+sentence instead of storing it. Keep it on one line, too: a newline inside the
+JSON string is an invalid control character and the request fails with
+`json_invalid`.)
 
 Each worker logs a line per request, so count them on each GPU host to see where
 the two requests went:
