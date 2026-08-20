@@ -34,9 +34,9 @@ the content is fake.
 
 `token_text` exists purely for testability: it lets two different
 `MockEngine`-backed Workers produce distinguishable output (`"from-a_0"` vs.
-`"from-b_0"`), which is how later tests can prove a round-robin router is
-really alternating between two different workers rather than always hitting
-one.
+`"from-b_0"`), which is how the Frontend tests can tell *which* worker served
+a request — proving both that unrelated prompts spread across workers and
+that prefix-sharing prompts land on the same one.
 
 ## The Worker service (`main.py`)
 
