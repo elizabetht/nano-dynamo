@@ -12,10 +12,12 @@ class KVRouter:
 
     def __init__(self, block_size: int = 16):
         self.block_size = block_size
-        # In-flight requests per worker; an absent worker means 0. This is the
-        # counterweight to cache affinity in `select`: routing purely by longest
-        # prefix match would pile every request sharing a common prefix onto a
-        # single worker while the rest sit idle.
+        # In-flight requests per worker; an absent worker means 0. Used by
+        # `select` to break ties *among workers with equal cache overlap* --
+        # it does not override affinity. A hot shared prefix owned by one
+        # worker keeps going to that worker however deep its queue gets;
+        # real Dynamo instead scores overlap against load on one scale
+        # (`--router-kv-overlap-score-credit`) so load can win.
         self.inflight: dict[str, int] = {}
         self.prefix_owners: dict[str, set[str]] = {}
         self._rr = 0  # round-robin cursor for breaking equal-load ties

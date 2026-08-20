@@ -74,6 +74,12 @@ a live one holding a shallower prefix.
 **Honest limitations.** This is a teaching implementation, and it predicts
 rather than knows:
 
+- **Affinity outranks load absolutely.** The tiers are strict: load only breaks
+  ties among workers with *equal* cache overlap. If one worker owns a hot
+  prefix, every request sharing it goes there no matter how deep its queue is,
+  while an idle worker with a cold cache sits unused. Real Dynamo scores
+  overlap and load on a single scale (`--router-kv-overlap-score-credit`), so
+  enough load can outweigh a cache hit.
 - **Block granularity is coarse.** Overlap counts only in whole 16-word blocks,
   so two prompts sharing 20 words but diverging at word 17 share just one
   block — the extra 4 words buy nothing.
