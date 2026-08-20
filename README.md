@@ -133,6 +133,34 @@ run below used three machines — a CPU host for the Registry and Frontend, and
 two GPU hosts each running a vLLM worker — but two workers on one box with
 different `WORKER_PORT`s works the same way.
 
+**Install `0.2.0` on every host.** The CPU host needs only the pure-Python
+package; the GPU hosts also need vLLM:
+
+```bash
+# every host
+python3 -m venv ~/nano-dynamo-venv
+~/nano-dynamo-venv/bin/pip install --upgrade pip
+~/nano-dynamo-venv/bin/pip install nano-dynamo==0.2.0
+
+# GPU hosts only
+~/nano-dynamo-venv/bin/pip install vllm
+
+# confirm
+~/nano-dynamo-venv/bin/python -c "import importlib.metadata as m; print(m.version('nano-dynamo'))"
+```
+
+Optionally pre-cache the model so the first request doesn't wait on a download:
+
+```bash
+~/nano-dynamo-venv/bin/python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-0.6B')"
+```
+
+Only the **Frontend's** version changes routing behavior — the Worker and
+Registry are identical between `0.1.1` and `0.2.0`. That's what makes the
+round-robin comparison below possible without touching the GPU hosts.
+
+Then launch the services (`python` below means `~/nano-dynamo-venv/bin/python`):
+
 ```bash
 # CPU host (192.168.1.75) — Registry, then Frontend
 REGISTRY_HOST=0.0.0.0 python -m nano_dynamo.registry.main
