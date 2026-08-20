@@ -265,9 +265,31 @@ WORKER_PORT=8002 python -m nano_dynamo.worker.main
 
 ## Running the tests
 
+The test suite ships with the source, not with the PyPI package — a
+`pip install nano-dynamo` gives you the three services but no tests. To run
+them, work from a checkout at the version you care about:
+
 ```bash
+git clone https://github.com/elizabetht/nano-dynamo
+cd nano-dynamo
+git checkout v0.2.0          # or v0.1.1 for Chapter 1
+
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"      # the [dev] extra is what brings in pytest
+
 pytest -v
 ```
+
+`v0.2.0` runs 49 tests, including the 14 `KVRouter` tests in
+`tests/test_router.py` and the two Frontend routing tests in
+`tests/test_frontend.py` that prove prefix-sharing requests reach the same
+worker and that a mid-stream failure still releases its in-flight count.
+
+That's the offline check. To watch the routing actually happen against live
+workers, use [Verifying it with two real vLLM
+workers](#verifying-it-with-two-real-vllm-workers) above, which works from a
+plain `pip install` and needs no checkout.
 
 ## Deploying
 
