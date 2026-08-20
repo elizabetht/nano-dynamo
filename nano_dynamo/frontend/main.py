@@ -1,11 +1,11 @@
 from collections.abc import Callable
 from dataclasses import dataclass
-from itertools import count
 
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
+from nano_dynamo.frontend.router import KVRouter
 from nano_dynamo.models import ChatCompletionRequest, GenerateRequest
 from nano_dynamo.registry_client import RegistryClientProtocol
 
@@ -18,7 +18,8 @@ class FrontendSettings:
 
 def create_app(settings: FrontendSettings) -> FastAPI:
     app = FastAPI()
-    counter = count()
+    router = KVRouter()
+    app.state.kv_router = router  # exposed for tests/introspection
 
     @app.post("/v1/chat/completions")
     async def chat_completions(request: ChatCompletionRequest):
@@ -28,8 +29,10 @@ def create_app(settings: FrontendSettings) -> FastAPI:
                 status_code=503,
                 detail=f"No live workers registered for model '{request.model}'",
             )
-        worker = workers[next(counter) % len(workers)]
         prompt = "\n".join(f"{message.role}: {message.content}" for message in request.messages)
+        worker = router.select(workers, prompt)
+        router.record(worker.worker_id, prompt)
+        router.acquire(worker.worker_id)
         worker_client = settings.worker_client_factory(worker.endpoint_url)
 
         async def token_stream():
@@ -47,6 +50,9 @@ def create_app(settings: FrontendSettings) -> FastAPI:
                         yield chunk
             except Exception as exc:
                 yield f"\n[error: worker unavailable: {exc}]"
+            finally:
+                # In a finally so a mid-stream failure never leaks the count.
+                router.release(worker.worker_id)
 
         return StreamingResponse(token_stream(), media_type="text/plain")
 
